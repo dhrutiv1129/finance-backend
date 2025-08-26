@@ -1,3 +1,4 @@
 ﻿flask
 flask-cors
+pandas
 gunicorn
