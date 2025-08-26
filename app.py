@@ -1,22 +1,34 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 import os
 import re
+import pandas as pd
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app)  # allows all origins
 
-# Median annual incomes by age range (USD)
-MEDIAN_INCOME_BY_AGE = {
-    "Under 20": 20000,
-    "20 - 29": 35000,
-    "30 - 39": 55000,
-    "40 - 49": 70000,
-    "50 - 59": 75000,
-    "60 - 69": 65000,
-    "70 - 79": 50000,
-    "80 - 89": 40000,
-    "90 and above": 30000
+# Load CSV
+income_table = pd.read_csv("income_percentiles.csv")
+income_table["income from"] = income_table["income from"].replace('[\$,]', '', regex=True).astype(float)
+income_table["income to"] = income_table["income to"].replace('[\$,]', '', regex=True).astype(float)
+income_table["Percentile"] = pd.to_numeric(income_table["Percentile"], errors="coerce")
+
+print(income_table["income from"])
+
+# Age mapping
+AGE_GROUP_MAPPING = {
+    "15 to 24 years": 1,
+    "25 to 29 years": 2,
+    "30 to 34 years": 3,
+    "35 to 39 years": 4,
+    "40 to 44 years": 5,
+    "45 to 49 years": 6,
+    "50 to 54 years": 7,
+    "55 to 59 years": 8,
+    "60 to 64 years": 9,
+    "65 to 69 years": 10,
+    "70 to 74 years": 11,
+    "75 years and over": 12,
 }
 
 DEPENDENT_PERCENT_PENALTY = {
@@ -57,49 +69,36 @@ DEBT_MAPPING = {
 }
 
 
-def parse_monthly_income(income_str):
-    if not income_str:
+def parse_monthly_income(income):
+    """Convert frontend input to a numeric monthly income."""
+    if income is None:
         return None
-    income_str = income_str.replace(",", "").replace("$", "").strip()
-    if income_str.lower().startswith("under"):
-        match = re.search(r"Under\s*(\d+)", income_str, re.IGNORECASE)
-        if match:
-            return float(match.group(1)) * 0.5
-    if "-" in income_str:
-        parts = income_str.split("-")
-        try:
-            low = float(parts[0].strip())
-            high = float(parts[1].strip())
-            return (low + high) / 2
-        except:
-            return None
-    if income_str.endswith("+"):
-        try:
-            return float(income_str[:-1].strip())
-        except:
-            return None
+    if isinstance(income, (int, float)):
+        return float(income)
+    if not isinstance(income, str):
+        return None
+    income_str = income.replace(",", "").replace("$", "").strip()
     try:
         return float(income_str)
     except:
         return None
 
 
-def income_score(age, monthly_income, income_percent_to_dependents):
-    median = MEDIAN_INCOME_BY_AGE.get(age)
-    if median is None or median == 0:
-        base_score = 6
-    else:
-        annual_income = monthly_income * 12
-        ratio = annual_income / median
-        if ratio < 0.5:
-            base_score = 1
-        elif ratio > 1.5:
-            base_score = 10
-        else:
-            base_score = round(1 + (ratio - 0.5) * 9, 2)
-    penalty_factor = DEPENDENT_PERCENT_PENALTY.get(income_percent_to_dependents, 1.0)
-    adjusted_score = round(base_score * penalty_factor, 2)
-    return max(1, min(10, adjusted_score))
+def income_score(age_label, monthly_income):
+    print(f"[DEBUG] income_score called with age={age_label}, income={monthly_income}") 
+    age_group_id = AGE_GROUP_MAPPING.get(age_label)
+    if age_group_id is None:
+        return None
+    age_data = income_table[income_table["age_group_id"] == age_group_id]
+    row = age_data[
+        (age_data["income from"] <= monthly_income) &
+        (age_data["income to"] >= monthly_income)
+    ]
+    if row.empty:
+        return None
+    print(f"[DEBUG] Age: {age_group_id}, Percentile: {row.iloc[0]['Percentile']}")
+
+    return row.iloc[0]["Percentile"] * 10  # numeric score
 
 
 def family_budget_score(expense_range):
@@ -113,32 +112,24 @@ def net_worth_score(assets, debt):
 
 
 @app.route('/process-assessment', methods=['POST'])
+@cross_origin()
 def process_assessment():
     data = request.get_json()
-    
+
+    # Age
+    age_input = data.get("age")
+    if age_input is None:
+        return jsonify({"error": "Invalid age input"}), 400
+
     # Income
-    age = data.get("age")
-    monthly_income_str = data.get("familyGrossIncome")
-    income_percent_to_dependents = data.get("incomeToDependentsPercent", "0%")
-    
-    if not age or not monthly_income_str:
-        return jsonify({"error": "Missing required fields: age or familyGrossIncome"}), 400
-    
-    monthly_income = parse_monthly_income(monthly_income_str)
-    if monthly_income is None:
-        return jsonify({"error": "Could not parse familyGrossIncome"}), 400
-    
-    income_subscore = income_score(age, monthly_income, income_percent_to_dependents)
-    
-    # Family Budget
-    family_expense = data.get("familyExpenses")
-    family_budget_subscore = family_budget_score(family_expense)
-    
-    # Net Worth
-    assets = data.get("totalAssets")
-    debt = data.get("totalDebt")
-    net_worth_subscore = net_worth_score(assets, debt)
-    
+    family_gross_income = parse_monthly_income(data.get("familyGrossIncome")) or 30000
+
+    # Calculate scores
+    income_subscore = income_score(age_input, family_gross_income)
+    print("income subscore:", income_subscore)
+    family_budget_subscore = family_budget_score(data.get("familyExpenses"))
+    net_worth_subscore = net_worth_score(data.get("totalAssets"), data.get("totalDebt"))
+
     return jsonify({
         "incomeScore": income_subscore,
         "familyBudgetScore": family_budget_subscore,
