@@ -13,8 +13,19 @@ income_table["income from"] = income_table["income from"].replace('[\$,]', '', r
 income_table["income to"] = income_table["income to"].replace('[\$,]', '', regex=True).astype(float)
 income_table["Percentile"] = pd.to_numeric(income_table["Percentile"], errors="coerce")
 
-print(income_table["income from"])
 
+print(income_table)
+median_incomes = (
+    income_table[income_table["Percentile"] <= 0.50]  # only keep <= 0.50
+    .sort_values(["age_group_id", "Percentile"])      # sort within groups
+    .groupby("age_group_id")                          # group by age group
+    .tail(1)                                          # take the closest (max ≤ 0.50)
+)
+median_incomes["default_income"] = (
+    ((median_incomes["income from"] + median_incomes["income to"]) / 2).round(-3).astype(int)
+)
+
+print(median_incomes)
 # Age mapping
 AGE_GROUP_MAPPING = {
     "15 to 24 years": 1,
@@ -30,6 +41,7 @@ AGE_GROUP_MAPPING = {
     "70 to 74 years": 11,
     "75 years and over": 12,
 }
+
 
 DEPENDENT_PERCENT_PENALTY = {
     "0%": 1.0,
@@ -85,7 +97,7 @@ def parse_monthly_income(income):
 
 
 def income_score(age_label, monthly_income):
-    print(f"[DEBUG] income_score called with age={age_label}, income={monthly_income}") 
+    
     age_group_id = AGE_GROUP_MAPPING.get(age_label)
     if age_group_id is None:
         return None
@@ -96,7 +108,7 @@ def income_score(age_label, monthly_income):
     ]
     if row.empty:
         return None
-    print(f"[DEBUG] Age: {age_group_id}, Percentile: {row.iloc[0]['Percentile']}")
+   
 
     return row.iloc[0]["Percentile"] * 10  # numeric score
 
@@ -111,6 +123,30 @@ def net_worth_score(assets, debt):
     return round((asset_score + debt_score) / 2, 1)
 
 
+@app.route('/default-income', methods=['POST'])
+@cross_origin()
+def default_income():
+    print("hello")
+    data = request.get_json()
+    age_input = data.get("age")
+    if age_input is None:
+        return jsonify({"error": "Invalid age input"}), 400
+
+    # Get mapped age group id
+    age_group_id = AGE_GROUP_MAPPING.get(age_input)
+    if age_group_id is None:
+        return jsonify({"defaultIncome": 40000})  # fallback
+
+    # Look up the precomputed default income from median_incomes
+    row = median_incomes[median_incomes["age_group_id"] == age_group_id]
+    if row.empty:
+        return jsonify({"defaultIncome": 50000})  # fallback
+
+    default_income_val = row.iloc[0]["default_income"]
+    return jsonify({"defaultIncome": default_income_val})
+
+
+
 @app.route('/process-assessment', methods=['POST'])
 @cross_origin()
 def process_assessment():
@@ -122,11 +158,11 @@ def process_assessment():
         return jsonify({"error": "Invalid age input"}), 400
 
     # Income
-    family_gross_income = parse_monthly_income(data.get("familyGrossIncome")) or 30000
+    family_gross_income = parse_monthly_income(data.get("familyGrossIncome")) or 70000
 
     # Calculate scores
     income_subscore = income_score(age_input, family_gross_income)
-    print("income subscore:", income_subscore)
+    
     family_budget_subscore = family_budget_score(data.get("familyExpenses"))
     net_worth_subscore = net_worth_score(data.get("totalAssets"), data.get("totalDebt"))
 
