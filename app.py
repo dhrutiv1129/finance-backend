@@ -10,6 +10,8 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 
+
+
 app = Flask(__name__)
 CORS(app)  # allows all origins
 
@@ -132,7 +134,7 @@ def income_score(age_label, monthly_income):
         return None
    
 
-    return row.iloc[0]["Percentile"] * 100  # numeric score
+    return row.iloc[0]["Percentile"] * 10
 
 
 
