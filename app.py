@@ -263,18 +263,26 @@ def process_assessment():
 
     # Age
     age_input = data.get("age")
-    if age_input is None:
+    if not age_input:
         return jsonify({"error": "Invalid age input"}), 400
 
     # Income
     family_gross_income = data.get("familyGrossIncome")
+    try:
+        family_gross_income = float(family_gross_income)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid familyGrossIncome"}), 400
 
+    # Assets/Debt
+    total_assets = data.get("totalAssets")
+    total_debt = data.get("totalDebt")
+    if not total_assets or not total_debt:
+        return jsonify({"error": "Missing totalAssets or totalDebt"}), 400
 
     # Calculate scores
     income_subscore = income_score(age_input, family_gross_income)
-    
     family_budget_subscore = family_budget_score(data.get("familyExpenses"))
-    net_worth_subscore = net_worth_score(data.get("totalAssets"), data.get("totalDebt"))
+    net_worth_subscore = net_worth_score(total_assets, total_debt)
 
     return jsonify({
         "incomeScore": income_subscore,
@@ -282,7 +290,6 @@ def process_assessment():
         "netWorthScore": net_worth_subscore,
         "receivedData": data
     })
-
 
 @app.route('/')
 def home():
