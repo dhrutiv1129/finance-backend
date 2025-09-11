@@ -23,7 +23,7 @@ income_table["Percentile"] = pd.to_numeric(income_table["Percentile"], errors="c
 networth_percentile = pd.read_csv("networth_percentile.csv")
 
 
-print(income_table)
+
 median_incomes = (
     income_table[income_table["Percentile"] <= 0.50]  # only keep <= 0.50
     .sort_values(["age_group_id", "Percentile"])      # sort within groups
@@ -34,7 +34,7 @@ median_incomes["default_income"] = (
     ((median_incomes["income from"] + median_incomes["income to"]) / 2).round(-3).astype(int)
 )
 
-print(median_incomes)
+print("hello")
 # Age mapping
 AGE_GROUP_MAPPING = {
     "15 to 24 years": 1,
@@ -179,7 +179,7 @@ def net_worth_score(assets, debt):
 
 # Define ranges explicitly (midpoints handled in parse_range_to_midpoint)
 NET_WORTH_RANGES = {
-    1: (0, 25000),
+    1: (float("-inf"), 25000),
     2: (26000, 100000),
     3: (101000, 500000),
     4: (501000, 1000000),
@@ -199,35 +199,53 @@ def map_networth_to_range_id(networth: float) -> int:
 @app.route("/networth-percentile", methods=["POST"])
 @cross_origin()
 def get_networth_percentile():
+    print("hello")
+
     data = request.get_json()
+    print("\n--- /networth-percentile request ---")
+    print("Raw request data:", data)
+
     age_input = data.get("age")
     assets = data.get("totalAssets")
     debt = data.get("totalDebt")
+    print("Parsed inputs -> age:", age_input, "| assets:", assets, "| debt:", debt)
 
     if not age_input or assets is None or debt is None:
+        print("❌ Missing required fields")
         return jsonify({"error": "Missing required fields"}), 400
 
     # Compute numeric net worth
     asset_val = parse_range_to_midpoint(assets)
     debt_val = parse_range_to_midpoint(debt)
     net_worth = asset_val - debt_val
+    print(f"Converted -> asset_val={asset_val}, debt_val={debt_val}, net_worth={net_worth}")
 
     # Map to net worth range
     networth_range_id = map_networth_to_range_id(net_worth)
+    print("Mapped networth_range_id:", networth_range_id)
 
-    # Get percentile from precomputed table
+    # Get age group id
     age_group_id = AGE_GROUP_MAPPING.get(age_input)
+    print("Age group id:", age_group_id)
     if age_group_id is None:
+        print("❌ Age not found in AGE_GROUP_MAPPING")
         return jsonify({"networthPercentile": None})
 
+    # Get row from CSV
     row = networth_percentile[
         (networth_percentile["age_group_id"] == age_group_id) &
         (networth_percentile["net_worth_group_id"] == networth_range_id)
     ]
+    print("Filtered row from CSV:")
+    print(row)
 
     if row.empty:
+        print("❌ No matching row found in networth_percentile.csv")
         return jsonify({"networthPercentile": None})
+
     percentile = row.iloc[0]["percentile_value"] * 100
+    print("Final percentile (×100):", percentile)
+
     return jsonify({"networthPercentile": percentile})
 
 
