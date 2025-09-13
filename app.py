@@ -196,10 +196,15 @@ def map_networth_to_range_id(networth: float) -> int:
     return 7  # default to the top bucket if somehow above all ranges
 
 
+
+
+
+
 @app.route("/networth-percentile", methods=["POST"])
 @cross_origin()
 def get_networth_percentile():
     print("hello")
+    global yay_networth_percentile
 
     data = request.get_json()
     print("\n--- /networth-percentile request ---")
@@ -245,8 +250,11 @@ def get_networth_percentile():
 
     percentile = row.iloc[0]["percentile_value"] * 100
     print("Final percentile (×100):", percentile)
+    yay_networth_percentile = percentile
 
     return jsonify({"networthPercentile": percentile})
+def networth_subscore():
+    return yay_networth_percentile/10
 
 
 @app.route('/default-income', methods=['POST'])
@@ -300,7 +308,7 @@ def process_assessment():
     # Calculate scores
     income_subscore = income_score(age_input, family_gross_income)
     family_budget_subscore = family_budget_score(data.get("familyExpenses"))
-    net_worth_subscore = net_worth_score(total_assets, total_debt)
+    net_worth_subscore = networth_subscore()
 
     return jsonify({
         "incomeScore": income_subscore,
