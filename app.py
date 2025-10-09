@@ -317,7 +317,7 @@ def calculate_retirement_score(data):
         current_age = age_label_to_number(data.get("age"))
         retirement_age = safe_int(data.get("retirementAge"), 65)
         annual_expenses = parse_range_to_midpoint(data.get("familyExpenses", "$50,000 - $100,000")) * 12
-        assets = parse_range_to_midpoint(data.get("retirementAssets", "$100,000 - $500,000"))
+        assets = parse_range_to_midpoint(data.get("retirementAccountValue", "$100,000 - $500,000"))
 
         strategy = data.get("retirementStrategy", "Moderate")
         expense_change = data.get("postRetirementExpenses", "Same")
@@ -330,25 +330,39 @@ def calculate_retirement_score(data):
         M = MULTIPLIER.get(expense_change, 1.0)
 
         # ---- Step 3: Years until and after retirement ----
-        Y1 = max(retirement_age - current_age, 0)     # years until retirement
-        Y = max(95 - retirement_age, 0)               # years after retirement
+        
+        Y1 = max(retirement_age - current_age, 0) 
+        print("till retirement", Y1)    # years until retirement
+        Y = max(95 - retirement_age, 0)     
+        print("years after retirement", Y)          # years after retirement
 
         # ---- Step 4: Compute Future Assets (FA) and Future Expenses (FE) ----
+        
+        print("assets")
+        print(assets)
+        print("R")
+        print(R)
+
+        
+
         FA = assets * ((1 + R) ** Y1)
         FE = annual_expenses * M * Y
 
         if FE <= 0:
             return 1  # fail-safe
 
-        projected_AR = FA / FE
-        print(projected_AR)
+        projected_AR = (FA / FE) / 10
+        print("projected ar", projected_AR)
 
         # ---- Step 5: Target AR based on current age ----
         target_AR_table = {
             25: 0.05, 30: 0.10, 35: 0.20, 40: 0.35,
             45: 0.50, 50: 0.70, 55: 1.00, 60: 1.30, 65: 1.50,
         }
-        target_AR = max(val for age, val in target_AR_table.items() if current_age >= age)
+        target_values = [val for age, val in target_AR_table.items() if current_age >= age]
+        target_AR = max(target_values) if target_values else 0.05  # default for young users
+        print("target ar", target_AR)
+
 
         # ---- Step 6: Retirement Ratio ----
         retirement_ratio = projected_AR / target_AR
@@ -416,7 +430,7 @@ def process_assessment():
         "incomeScore": income_subscore,
         "familyBudgetScore": family_budget_subscore,
         "netWorthScore": net_worth_subscore,
-        "retirementScore": 3,
+        "retirementScore": retirement_score,
         "receivedData": data
     })
 
