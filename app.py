@@ -118,6 +118,17 @@ def parse_range_to_midpoint(range_str: str) -> float:
         else:
             raise ValueError(f"Invalid range format: {range_str}")
 
+def safe_int(val, default):
+    try:
+        return int(float(str(val).replace(",", "").strip()))
+    except Exception:
+        return default
+
+def safe_float(val, default):
+    try:
+        return float(str(val).replace(",", "").replace("$", "").strip())
+    except Exception:
+        return default
 
 
 def income_score(age_label, monthly_income):
@@ -272,6 +283,101 @@ def default_income():
     return jsonify({"defaultIncome": default_income_val})
 
 
+def age_label_to_number(age_label: str) -> int:
+    """Convert age range label into a representative numeric age."""
+    mapping = {
+        "15 to 24 years": 20,
+        "25 to 29 years": 27,
+        "30 to 34 years": 32,
+        "35 to 39 years": 37,
+        "40 to 44 years": 42,
+        "45 to 49 years": 47,
+        "50 to 54 years": 52,
+        "55 to 59 years": 57,
+        "60 to 64 years": 62,
+        "65 to 69 years": 67,
+        "70 to 74 years": 72,
+        "75 years and over": 78,
+    }
+    return mapping.get(age_label, 30)  # default 30
+
+def default_retirement_age(current_age):
+    """Compute default retirement age based on current age."""
+    if current_age > 60:
+        # Round up to nearest multiple of 5
+        return ((current_age + 4) // 5) * 5
+    return 60
+
+
+def calculate_retirement_score(data):
+    """Compute user's retirement readiness score (1–10 scale) based on AR and target AR tables."""
+
+    try:
+        # ---- Step 1: Parse inputs ----
+        current_age = age_label_to_number(data.get("age"))
+        retirement_age = safe_int(data.get("retirementAge"), 65)
+        annual_expenses = parse_range_to_midpoint(data.get("familyExpenses", "$50,000 - $100,000")) * 12
+        assets = parse_range_to_midpoint(data.get("retirementAssets", "$100,000 - $500,000"))
+
+        strategy = data.get("retirementStrategy", "Moderate")
+        expense_change = data.get("postRetirementExpenses", "Same")
+
+        # ---- Step 2: Constants ----
+        RATES = {"Conservative": 0.05, "Moderate": 0.08, "Aggressive": 0.12}
+        MULTIPLIER = {"Same": 1.0, "Lower": 0.8, "Higher": 1.3}
+
+        R = RATES.get(strategy, 0.08)
+        M = MULTIPLIER.get(expense_change, 1.0)
+
+        # ---- Step 3: Years until and after retirement ----
+        Y1 = max(retirement_age - current_age, 0)     # years until retirement
+        Y = max(95 - retirement_age, 0)               # years after retirement
+
+        # ---- Step 4: Compute Future Assets (FA) and Future Expenses (FE) ----
+        FA = assets * ((1 + R) ** Y1)
+        FE = annual_expenses * M * Y
+
+        if FE <= 0:
+            return 1  # fail-safe
+
+        projected_AR = FA / FE
+        print(projected_AR)
+
+        # ---- Step 5: Target AR based on current age ----
+        target_AR_table = {
+            25: 0.05, 30: 0.10, 35: 0.20, 40: 0.35,
+            45: 0.50, 50: 0.70, 55: 1.00, 60: 1.30, 65: 1.50,
+        }
+        target_AR = max(val for age, val in target_AR_table.items() if current_age >= age)
+
+        # ---- Step 6: Retirement Ratio ----
+        retirement_ratio = projected_AR / target_AR
+        print("Retirement Ratio:", retirement_ratio)
+
+        # ---- Step 7: Map ratio → 1–10 score ----
+        thresholds = [
+            (0.1, 1),
+            (0.3, 2),
+            (0.5, 3),
+            (0.7, 4),
+            (0.9, 5),
+            (1.0, 6),
+            (1.3, 7),
+            (1.5, 8),
+            (1.8, 9),
+        ]
+
+        retirement_score = 10  # default if above highest threshold
+        for threshold, score in thresholds:
+            if retirement_ratio < threshold:
+                retirement_score = score
+                break
+
+        return round(retirement_score, 1)
+
+    except Exception as e:
+        print("Error computing retirement score:", e)
+        return 1
 
 
 @app.route('/process-assessment', methods=['POST'])
@@ -301,11 +407,16 @@ def process_assessment():
     income_subscore = income_score(age_input, family_gross_income)
     family_budget_subscore = family_budget_score(data.get("familyExpenses"))
     net_worth_subscore = net_worth_score(total_assets, total_debt)
+    retirement_score = calculate_retirement_score(data)
+    print(retirement_score)
+   
+
 
     return jsonify({
         "incomeScore": income_subscore,
         "familyBudgetScore": family_budget_subscore,
         "netWorthScore": net_worth_subscore,
+        "retirementScore": 3,
         "receivedData": data
     })
 
