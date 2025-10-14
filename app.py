@@ -179,8 +179,6 @@ def get_income_percentile():
 
 
 
-def family_budget_score(expense_range):
-    return FAMILY_BUDGET_MAPPING.get(expense_range, 5)
 
 
 def net_worth_score(assets, debt):
@@ -308,6 +306,33 @@ def default_retirement_age(current_age):
         return ((current_age + 4) // 5) * 5
     return 60
 
+def calculate_fam_budget_score(data):
+    annualExpenses = parse_range_to_midpoint(data.get("familyExpenses", "$50,000 - $100,000")) * 12
+    familyGrossIncome = safe_float(data.get("familyGrossIncome"), 60000)
+    ratio = familyGrossIncome / annualExpenses
+    print("fam: ", ratio)
+    mapping = [
+        (1, 1),
+        (1.5, 2),
+        (2, 3),
+        (2.5, 4),
+        (3, 5),
+        (3.5, 6),
+        (4, 7),
+    ]
+    if(ratio >= 5):
+        return 10
+    else:
+        for (threshold, score) in mapping:
+            if (ratio < threshold):
+                return score
+            
+            
+            
+        
+        
+    
+
 
 def calculate_retirement_score(data):
     """Compute user's retirement readiness score (1–10 scale) based on AR and target AR tables."""
@@ -419,7 +444,9 @@ def process_assessment():
 
     # Calculate scores
     income_subscore = income_score(age_input, family_gross_income)
-    family_budget_subscore = family_budget_score(data.get("familyExpenses"))
+    print("going in")
+    family_budget_subscore = calculate_fam_budget_score(data)
+    print("fam budget", family_budget_subscore)
     net_worth_subscore = net_worth_score(total_assets, total_debt)
     retirement_score = calculate_retirement_score(data)
     print(retirement_score)
