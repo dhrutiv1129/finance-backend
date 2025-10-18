@@ -371,7 +371,9 @@ def calculate_retirement_score(data):
         
 
         FA = assets * ((1 + R) ** Y1)
+        print("future assets", FA)
         FE = annual_expenses * M * Y
+        print("future expenses", FE)
 
         if FE <= 0:
             return 1  # fail-safe
@@ -396,14 +398,15 @@ def calculate_retirement_score(data):
         # ---- Step 7: Map ratio → 1–10 score ----
         thresholds = [
             (0.1, 1),
-            (0.3, 2),
-            (0.5, 3),
-            (0.7, 4),
-            (0.9, 5),
-            (1.0, 6),
-            (1.3, 7),
-            (1.5, 8),
-            (1.8, 9),
+            (0.2, 2),
+            (0.3, 3),
+            (0.4, 4),
+            (0.5, 5),
+            (0.6, 6),
+            (0.7, 7),
+            (0.8, 8),
+            (0.9, 9),
+            (1, 10),
         ]
 
         retirement_score = 10  # default if above highest threshold
